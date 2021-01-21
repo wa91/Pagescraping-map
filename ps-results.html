@@ -1,0 +1,1209 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+	<title>Pagescraping results</title>
+	<meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+	<meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+	<link rel="stylesheet" href="scripts/leaflet.css" />
+	<script src="scripts/leaflet.js"></script>
+	<script src="scripts/html2canvas.min.js"></script>
+	<script src="scripts/jquery-3.3.1.min.js"></script>
+	<link rel="stylesheet" media="screen" href="scripts/pg-css.css" data-turbolinks-track="true" />
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/0.4.2/leaflet.draw.css" />
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/0.4.2/leaflet.draw.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/1.5.3/jspdf.debug.js" integrity="sha384-NaWTHo/8YCBYJ59830LTz/P4aQZK1sS0SneOgAvhsIl3zBu8r9RevNg5lHCHAuQ/" crossorigin="anonymous"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.1.0/jspdf.plugin.autotable.min.js"></script>
+	
+	<style>
+		html, body, #map {
+		height: 100%;
+		padding: 0;
+		margin: 0;
+		width: 100%;
+		z-index:0;
+		overflow: hidden;
+	  }
+	body {font-family: Arial, Helvetica, sans-serif;}
+  </style>
+</head>
+
+<body>
+	<div class="ctrl-panel" data-html2canvas-ignore="true">
+		<span id="toggle-ctrl-panel" class="glyphicon glyphicon-menu-left"></span>
+		<table>
+			<tr>
+				<td>
+					<input type="text" id="ukcsearch" class="txtClass" placeholder="brand" list="brandList">
+					<datalist id="brandList"></datalist>					
+				</td>
+			</tr>
+			<tr>
+				<td>
+					<input type="text" id="ccode" class="txtClass" placeholder="country" list="countryList">
+					<datalist id="countryList"></datalist> 
+				</td><td style="width:15px;"><button style="border-width: 1px" onclick="reload()">go</button></td>
+			</tr>
+		</table> 
+		<font id="wms" color="blue">WMS</font>
+		<label class="switch">
+			<input id="sldr" type="checkbox">
+			<span class="slider round"></span>
+		</label>
+		<font id="wfs" color="grey">WFS</font>
+		&nbsp;<details id="loadpoiparent"><summary>Load POI</summary>
+		<div style="padding:3px;"><button id="loadpoia" onclick="poibrandname()">Search brandname</button></div>
+		<div style="padding:1px;"><button id="loadpoib"  onclick="poiname()">Search name</button></div>
+		<div style="padding:6px;"><input type="text" id="freesql" placeholder="Search via freetext sql" style="height:26px"><button id="loadpoic" style="border-width:1px;" onclick="poisql()">go</button></div>
+		<div><button id="poi" onclick="api_auth()">Load on fly</button></div>
+		
+		<div id="rmvchk"></div>
+		</details>
+		<div>
+		&nbsp;
+			<div id="infobox"></div></div>
+	</div>
+	<div class="legend">
+		<font color="grey" size="2" style="float:left">legend</font><font color="grey" size="2" style="float:right">download</font><br><br>
+		<i style="background:red"></i> scraped - alltheplaces <button id="sc1Container" style="float:right"> &nbsp;</button><br><br>
+		<i style="background:blue"></i> scraped - fme / python <button id="sc2Container" style="float:right"> &nbsp;</button><br><br>
+		<i style="background:#ad42f4"></i> yext <button id="sc3Container" style="float:right"> &nbsp;</button><br><br>
+		<i style="background:green"></i> wppoi <button id="p1Container" style="float:right"> &nbsp;</button><br><br>
+		<div id="chng_plx"></div><div id="chng_plxa"></div>
+	   <font color="grey" size="2" style="float:right">format: &nbsp;<select class="format" id="frmt">
+		  <option value="CSV">CSV</option>
+		  <option value="OGR-TAB">TAB</option>
+		  <option value="SHAPE-ZIP">SHP</option>
+		  <option value="OGR-MIF">MIF</option>
+		  <option value="OGR-XLSX">XLSX</option>
+		  <option value="OGR-SQLite">SQLite</option>
+		  <option value="kml">KML</option>
+	 </select></font>
+	</div>
+	<div id="log"></div>
+	<div class="loader"></div>
+	<div id="map"></div>
+	<script>
+ 
+// add google streetview functionality
+function sview() {
+	$('.leaflet-container').css('cursor','crosshair');
+	map.on('click', function(e) {		
+		window.open('http://maps.google.com/maps?q=&layer=c&cbll='+e.latlng.lat+','+e.latlng.lng, '_blank');	
+	map.off('click');
+	$('.leaflet-container').css('cursor','');
+	});
+}
+
+
+ var brandlist=[],countlist=[];
+
+//populate brand and country dropdown lists on page load
+$(document).ready(function() {
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+	var defaultParameters = {
+		service: 'WFS',
+		version: '1.0.0',
+		request: 'GetFeature',
+		typeName: 'cite:pagescraping_brands',
+		outputFormat: 'text/javascript',
+		format_options: 'callback: getJsona',
+	};
+	var parameters = L.Util.extend(defaultParameters);
+
+	$.ajax({
+		url: rootUrl + L.Util.getParamString(parameters),
+		dataType: 'jsonp',
+		jsonpCallback: 'getJsona',
+		success: function(dataa){
+		$(dataa.features).each(function() {
+			brandlist.push(this.properties.brand)
+			carsOption = "<option value=\"" + this.properties.brand + "\">" + this.properties.brand + "</option>";
+			$('#brandList').append(carsOption);
+			});   
+			}
+	});
+	
+	//streetview icon on pageload
+	$(".leaflet-control-attribution.leaflet-control").prepend("<div style='float:left' onclick='sview()'><img src='scripts/images/sv.jpg' alt='Street View' width='20px' height='24px'>&nbsp;&nbsp;</div>").width(330);   
+
+//populate country dropdown list
+	var rootUrla = 'http://152.144.220.198:8080/geoserver/ows';
+
+	var defaultParametersa = {
+		service: 'WFS',
+		version: '1.0.0',
+		request: 'GetFeature',
+		typeName: 'cite:pagescraping_country',
+		outputFormat: 'text/javascript',
+		format_options: 'callback: getJsonb',
+	};
+	var parametersa = L.Util.extend(defaultParametersa);
+	
+	$.ajax({
+			url: rootUrla + L.Util.getParamString(parametersa),
+			dataType: 'jsonp',
+			jsonpCallback: 'getJsonb',
+			success: function(data){
+			$(data.features).each(function() {
+				countlist.push(this.properties.country)
+				countryOption = "<option value=\"" + this.properties.country + "\">" + this.properties.country + "</option>";
+				$('#countryList').append(countryOption);
+			});			   
+			}
+		});
+});
+		
+//functionality for downloading data, by source
+$('#sc1Container').click(function() {
+	var frm = $('#frmt').val();
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+		if (searchCnt) {
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:pagescraping',
+			outputFormat: frm,
+			CQL_FILTER: "source = 'alltheplaces' and brand like '" + searchName + "' and country = '" + searchCnt.toUpperCase() + "' "
+		};
+		} else {
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:pagescraping',
+			outputFormat: frm,
+			CQL_FILTER: "source = 'alltheplaces' and brand like '" + searchName + "' "
+		};
+		
+		}
+	var parameters = L.Util.extend(defaultParameters);
+	window.location.href = rootUrl + L.Util.getParamString(parameters);
+});
+$('#sc2Container').click(function() {
+	var frm = $('#frmt').val();
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+	 if (searchCnt) {
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:pagescraping',
+			outputFormat: frm,
+			CQL_FILTER: " (source = 'fme' or source = 'python' ) and country = '" + searchCnt.toUpperCase() + "' and brand like '" + searchName + "' "
+		};
+	 } else { 
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:pagescraping',
+			outputFormat: frm,
+			CQL_FILTER: "(source = 'fme' or source = 'python' ) and brand like '" + searchName + "' "
+		};		  
+	 
+	 }
+		var parameters = L.Util.extend(defaultParameters);
+	window.location.href = rootUrl + L.Util.getParamString(parameters);
+});
+$('#sc3Container').click(function() {
+	var frm = $('#frmt').val();
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+		if (searchCnt) {
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:pagescraping',
+			outputFormat: frm,
+			CQL_FILTER: "source = 'yext' and country = '" + searchCnt.toUpperCase() + "' and brand like '" + searchName + "' "
+		};
+		} else {
+			var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:pagescraping',
+			outputFormat: frm,
+			CQL_FILTER: "source = 'yext' and brand like '" + searchName + "' "
+		};		   
+		}
+		var parameters = L.Util.extend(defaultParameters);
+	window.location.href = rootUrl + L.Util.getParamString(parameters);
+});
+$('#p1Container').click(function() {
+	var frm = $('#frmt').val();
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:wppoi_'+gbr_usa,
+			outputFormat: frm,
+			CQL_FILTER: filter
+		};
+
+		var parameters = L.Util.extend(defaultParameters);
+	window.location.href = rootUrl + L.Util.getParamString(parameters);
+});
+		
+//Compare function - filtering by pb_id list
+$('#chng_plx').click(function() {
+
+	var frm = $('#frmt').val();
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+		var defaultParameters = {
+			service: 'WFS',
+			version: '1.0.0',
+			request: 'GetFeature',
+			typeName: 'cite:wppoi_'+gbr_usa,
+			outputFormat: frm
+		};
+
+	var parameters = L.Util.extend(defaultParameters);
+	 var url = rootUrl + L.Util.getParamString(parameters);
+
+	var form = document.createElement("form");
+	form.method = "POST";
+	form.action = url;
+
+	var input = document.createElement("input");
+	input.type = "hidden";
+	input.name = "cql_filter";
+	input.value = "("+ filter + ") and pb_id in ("+ary+") ";
+	form.appendChild(input);
+	
+	document.body.appendChild(form);
+	form.submit();	   
+	 
+});
+//Compare function for pb_ids in list		
+ $('#chng_plxa').click(function() {
+
+	var frm = $('#frmt').val();
+	var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+	var defaultParameters = {
+		service: 'WFS',
+		version: '1.0.0',
+		request: 'GetFeature',
+		typeName: 'cite:wppoi_'+gbr_usa,
+		outputFormat: frm
+	};
+
+	var parameters = L.Util.extend(defaultParameters);
+	 var url = rootUrl + L.Util.getParamString(parameters);
+
+	
+	var form = document.createElement("form");
+	form.method = "POST";
+	form.action = url;
+
+	var input = document.createElement("input");
+	input.type = "hidden";
+	input.name = "cql_filter";
+	input.value = "("+filter + ") and not pb_id in ("+ary+") ";
+	form.appendChild(input);
+
+	document.body.appendChild(form);
+	form.submit();	   
+			
+		});
+		var schkd, method = '';
+
+//Switch between WMS and WFS, clear layers and trigger get requests
+$('#sldr').click(function() {
+   if (gbAjax && gbAjax.done && gbAjax.fail && gbAjax.always){
+			gbAjax.abort();
+	   }
+	if (schkd == 1) {
+		schkd = 0;
+		$('#wfs').css('color', 'grey');
+		$('#wms').css('color', 'blue');
+		jsn.clearLayers();
+		map.removeLayer(jsn);
+		method = 'wms';
+		getWFS();
+		
+		if (document.getElementById("loadpoia").checked == true || document.getElementById("loadpoib").checked == true) {
+				gbchkd = 0;
+			jsngbr.clearLayers();
+			map.removeLayer(jsngbr);
+			gbrlpoi();
+			
+		}
+	} else {
+		schkd = 1;
+		$('#wms').css('color', 'grey');
+		$('#wfs').css('color', 'blue');
+		map.removeLayer(wmsLayer);
+		method = 'wfs';
+		getWFS();
+		
+		if (document.getElementById("loadpoia").checked == true || document.getElementById("loadpoib").checked == true) {
+				gbchkd = 0;
+			 map.removeLayer(gbrwmsLayer);
+			gbrlpoi();
+			
+		}
+	}
+});
+
+// Map initialisation
+var map = new L.Map('map', {
+	zoomControl: false,
+	center: [19, -0.151356],
+	zoom: 3
+});
+
+L.control.zoom({
+	position: 'bottomright'
+}).addTo(map);
+
+//var basemap = L.tileLayer('http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', 
+//L.tileLayer('http://{s}.tiles.wmflabs.org/bw-mapnik/{z}/{x}/{y}.png', {
+
+L.tileLayer('http://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png', {
+	attribution: 'Map data &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, © <a href="https://carto.com/attribution">CARTO</a>',
+	crossOrigin: 'anonymous'
+}).addTo(map);
+
+var wkt, lyrName, searchName = '',
+	searchCnt = '',
+	chekd = 0;
+
+function getURLParameter(name) {
+	return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search) || [null, ''])[1].replace(/\+/g, '%20')) || null;
+};
+
+var brandUrl = getURLParameter('brand');
+var cntUrl = getURLParameter('country');
+var iso = [{iso2: "AF", iso3: "AFG"},{iso2: "AL", iso3: "ALB"},{iso2: "DZ", iso3: "DZA"},{iso2: "AS", iso3: "ASM"},{iso2: "AD", iso3: "AND"},{iso2: "AO", iso3: "AGO"},{iso2: "AI", iso3: "AIA"},{iso2: "AQ", iso3: "ATA"},{iso2: "AG", iso3: "ATG"},{iso2: "AR", iso3: "ARG"},{iso2: "AM", iso3: "ARM"},{iso2: "AW", iso3: "ABW"},{iso2: "AU", iso3: "AUS"},{iso2: "AT", iso3: "AUT"},{iso2: "AZ", iso3: "AZE"},{iso2: "BS", iso3: "BHS"},{iso2: "BH", iso3: "BHR"},{iso2: "BD", iso3: "BGD"},{iso2: "BB", iso3: "BRB"},{iso2: "BY", iso3: "BLR"},{iso2: "BE", iso3: "BEL"},{iso2: "BZ", iso3: "BLZ"},{iso2: "BJ", iso3: "BEN"},{iso2: "BM", iso3: "BMU"},{iso2: "BT", iso3: "BTN"},{iso2: "BO", iso3: "BOL"},{iso2: "BA", iso3: "BIH"},{iso2: "BW", iso3: "BWA"},{iso2: "BV", iso3: "BVT"},{iso2: "BR", iso3: "BRA"},{iso2: "IO", iso3: "IOT"},{iso2: "VG", iso3: "VGB"},{iso2: "BN", iso3: "BRN"},{iso2: "BG", iso3: "BGR"},{iso2: "BF", iso3: "BFA"},{iso2: "MM", iso3: "MMR"},{iso2: "BI", iso3: "BDI"},{iso2: "CV", iso3: "CPV"},{iso2: "KH", iso3: "KHM"},{iso2: "CM", iso3: "CMR"},{iso2: "CA", iso3: "CAN"},{iso2: "KY", iso3: "CYM"},{iso2: "CF", iso3: "CAF"},{iso2: "TD", iso3: "TCD"},{iso2: "CL", iso3: "CHL"},{iso2: "CN", iso3: "CHN"},{iso2: "CX", iso3: "CXR"},{iso2: "CC", iso3: "CCK"},{iso2: "CO", iso3: "COL"},{iso2: "KM", iso3: "COM"},{iso2: "CD", iso3: "COD"},{iso2: "CG", iso3: "COG"},{iso2: "CK", iso3: "COK"},{iso2: "CR", iso3: "CRI"},{iso2: "CI", iso3: "CIV"},{iso2: "HR", iso3: "HRV"},{iso2: "CU", iso3: "CUB"},{iso2: "CW", iso3: "CUW"},{iso2: "CY", iso3: "CYP"},{iso2: "CZ", iso3: "CZE"},{iso2: "DK", iso3: "DNK"},{iso2: "DJ", iso3: "DJI"},{iso2: "DM", iso3: "DMA"},{iso2: "DO", iso3: "DOM"},{iso2: "EC", iso3: "ECU"},{iso2: "EG", iso3: "EGY"},{iso2: "SV", iso3: "SLV"},{iso2: "GQ", iso3: "GNQ"},{iso2: "ER", iso3: "ERI"},{iso2: "EE", iso3: "EST"},{iso2: "SZ", iso3: "SWZ"},{iso2: "ET", iso3: "ETH"},{iso2: "FK", iso3: "FLK"},{iso2: "FO", iso3: "FRO"},{iso2: "FJ", iso3: "FJI"},{iso2: "FI", iso3: "FIN"},{iso2: "FR", iso3: "FRA"},{iso2: "FX", iso3: "FXX"},{iso2: "GF", iso3: "GUF"},{iso2: "PF", iso3: "PYF"},{iso2: "TF", iso3: "ATF"},{iso2: "GA", iso3: "GAB"},{iso2: "GM", iso3: "GMB"},{iso2: "PS", iso3: "PSE"},{iso2: "GE", iso3: "GEO"},{iso2: "DE", iso3: "DEU"},{iso2: "GH", iso3: "GHA"},{iso2: "GI", iso3: "GIB"},{iso2: "GR", iso3: "GRC"},{iso2: "GL", iso3: "GRL"},{iso2: "GD", iso3: "GRD"},{iso2: "GP", iso3: "GLP"},{iso2: "GU", iso3: "GUM"},{iso2: "GT", iso3: "GTM"},{iso2: "GG", iso3: "GGY"},{iso2: "GN", iso3: "GIN"},{iso2: "GW", iso3: "GNB"},{iso2: "GY", iso3: "GUY"},{iso2: "HT", iso3: "HTI"},{iso2: "HM", iso3: "HMD"},{iso2: "VA", iso3: "VAT"},{iso2: "HN", iso3: "HND"},{iso2: "HK", iso3: "HKG"},{iso2: "HU", iso3: "HUN"},{iso2: "IS", iso3: "ISL"},{iso2: "IN", iso3: "IND"},{iso2: "ID", iso3: "IDN"},{iso2: "IR", iso3: "IRN"},{iso2: "IQ", iso3: "IRQ"},{iso2: "IE", iso3: "IRL"},{iso2: "IM", iso3: "IMN"},{iso2: "IL", iso3: "ISR"},{iso2: "IT", iso3: "ITA"},{iso2: "JM", iso3: "JAM"},{iso2: "JP", iso3: "JPN"},{iso2: "JE", iso3: "JEY"},{iso2: "JO", iso3: "JOR"},{iso2: "KZ", iso3: "KAZ"},{iso2: "KE", iso3: "KEN"},{iso2: "KI", iso3: "KIR"},{iso2: "KP", iso3: "PRK"},{iso2: "KR", iso3: "KOR"},{iso2: "XK", iso3: "XKS"},{iso2: "KW", iso3: "KWT"},{iso2: "KG", iso3: "KGZ"},{iso2: "LA", iso3: "LAO"},{iso2: "LV", iso3: "LVA"},{iso2: "LB", iso3: "LBN"},{iso2: "LS", iso3: "LSO"},{iso2: "LR", iso3: "LBR"},{iso2: "LY", iso3: "LBY"},{iso2: "LI", iso3: "LIE"},{iso2: "LT", iso3: "LTU"},{iso2: "LU", iso3: "LUX"},{iso2: "MO", iso3: "MAC"},{iso2: "MG", iso3: "MDG"},{iso2: "MW", iso3: "MWI"},{iso2: "MY", iso3: "MYS"},{iso2: "MV", iso3: "MDV"},{iso2: "ML", iso3: "MLI"},{iso2: "MT", iso3: "MLT"},{iso2: "MH", iso3: "MHL"},{iso2: "MQ", iso3: "MTQ"},{iso2: "MR", iso3: "MRT"},{iso2: "MU", iso3: "MUS"},{iso2: "YT", iso3: "MYT"},{iso2: "MX", iso3: "MEX"},{iso2: "FM", iso3: "FSM"},{iso2: "MD", iso3: "MDA"},{iso2: "MC", iso3: "MCO"},{iso2: "MN", iso3: "MNG"},{iso2: "ME", iso3: "MNE"},{iso2: "MS", iso3: "MSR"},{iso2: "MA", iso3: "MAR"},{iso2: "MZ", iso3: "MOZ"},{iso2: "NA", iso3: "NAM"},{iso2: "NR", iso3: "NRU"},{iso2: "NP", iso3: "NPL"},{iso2: "NL", iso3: "NLD"},{iso2: "NC", iso3: "NCL"},{iso2: "NZ", iso3: "NZL"},{iso2: "NI", iso3: "NIC"},{iso2: "NE", iso3: "NER"},{iso2: "NG", iso3: "NGA"},{iso2: "NU", iso3: "NIU"},{iso2: "NF", iso3: "NFK"},{iso2: "MK", iso3: "MKD"},{iso2: "MP", iso3: "MNP"},{iso2: "NO", iso3: "NOR"},{iso2: "OM", iso3: "OMN"},{iso2: "PK", iso3: "PAK"},{iso2: "PW", iso3: "PLW"},{iso2: "PA", iso3: "PAN"},{iso2: "PG", iso3: "PNG"},{iso2: "PY", iso3: "PRY"},{iso2: "PE", iso3: "PER"},{iso2: "PH", iso3: "PHL"},{iso2: "PN", iso3: "PCN"},{iso2: "PL", iso3: "POL"},{iso2: "PT", iso3: "PRT"},{iso2: "PR", iso3: "PRI"},{iso2: "QA", iso3: "QAT"},{iso2: "RE", iso3: "REU"},{iso2: "RO", iso3: "ROU"},{iso2: "RU", iso3: "RUS"},{iso2: "RW", iso3: "RWA"},{iso2: "BL", iso3: "BLM"},{iso2: "SH", iso3: "SHN"},{iso2: "KN", iso3: "KNA"},{iso2: "LC", iso3: "LCA"},{iso2: "MF", iso3: "MAF"},{iso2: "PM", iso3: "SPM"},{iso2: "VC", iso3: "VCT"},{iso2: "WS", iso3: "WSM"},{iso2: "SM", iso3: "SMR"},{iso2: "ST", iso3: "STP"},{iso2: "SA", iso3: "SAU"},{iso2: "SN", iso3: "SEN"},{iso2: "RS", iso3: "SRB"},{iso2: "SC", iso3: "SYC"},{iso2: "SL", iso3: "SLE"},{iso2: "SG", iso3: "SGP"},{iso2: "SX", iso3: "SXM"},{iso2: "SK", iso3: "SVK"},{iso2: "SI", iso3: "SVN"},{iso2: "SB", iso3: "SLB"},{iso2: "SO", iso3: "SOM"},{iso2: "ZA", iso3: "ZAF"},{iso2: "GS", iso3: "SGS"},{iso2: "SS", iso3: "SSD"},{iso2: "ES", iso3: "ESP"},{iso2: "LK", iso3: "LKA"},{iso2: "SD", iso3: "SDN"},{iso2: "SR", iso3: "SUR"},{iso2: "SJ", iso3: "SJM"},{iso2: "SE", iso3: "SWE"},{iso2: "CH", iso3: "CHE"},{iso2: "SY", iso3: "SYR"},{iso2: "TW", iso3: "TWN"},{iso2: "TJ", iso3: "TJK"},{iso2: "TZ", iso3: "TZA"},{iso2: "TH", iso3: "THA"},{iso2: "TL", iso3: "TLS"},{iso2: "TG", iso3: "TGO"},{iso2: "TK", iso3: "TKL"},{iso2: "TO", iso3: "TON"},{iso2: "TT", iso3: "TTO"},{iso2: "TN", iso3: "TUN"},{iso2: "TR", iso3: "TUR"},{iso2: "TM", iso3: "TKM"},{iso2: "TC", iso3: "TCA"},{iso2: "TV", iso3: "TUV"},{iso2: "UG", iso3: "UGA"},{iso2: "UA", iso3: "UKR"},{iso2: "AE", iso3: "ARE"},{iso2: "GB", iso3: "GBR"},{iso2: "UK", iso3: "GBR"},{iso2: "US", iso3: "USA"},{iso2: "UM", iso3: "UMI"},{iso2: "UY", iso3: "URY"},{iso2: "UZ", iso3: "UZB"},{iso2: "VU", iso3: "VUT"},{iso2: "VE", iso3: "VEN"},{iso2: "VN", iso3: "VNM"},{iso2: "VI", iso3: "VIR"},{iso2: "WF", iso3: "WLF"},{iso2: "PS", iso3: "PSE"},{iso2: "EH", iso3: "ESH"},{iso2: "YE", iso3: "YEM"},{iso2: "ZM", iso3: "ZMB"},{iso2: "ZW", iso3: "ZWE"}];
+	
+	if (brandUrl) {
+		if (cntUrl) {
+			searchCnt = cntUrl;
+			document.getElementById("ccode").value = cntUrl;
+			
+			var isos =  iso.filter(function(isoch) {
+			   return isoch.iso2 == cntUrl.toUpperCase();
+			});
+			gbr_usa = isos[0].iso3.toLowerCase();
+			
+		}
+		searchName = brandUrl.replace("'","''");
+		document.getElementById("ukcsearch").value = brandUrl;
+		getWFS()
+	}
+
+// get authenticated on geoenrich for loading on-fly
+var authID;
+
+var api_auth = function() {
+$.ajax({
+	url: "https://api.pitneybowes.com/oauth/token",
+	type: 'POST',
+	headers: {
+		"Authorization": "Basic XOIPREIJGPIREJNohardcodedcreditialsherePWJFPIJF=="
+	},
+	dataType: "json",
+	data: 'grant_type=client_credentials',
+	success: function(data) {
+		authID = "Bearer " + data.access_token;
+	},
+	error: function(data) {
+		alert(JSON.stringify(data));
+	}
+});
+	
+	lpoi();
+};
+   //only return points near the center of the map  
+var getMapRadiusKM = function() {
+	var mapBoundNorthEast = map.getBounds().getNorthEast();
+	var mapDistance = mapBoundNorthEast.distanceTo(map.getCenter());
+
+	if (mapDistance / 1000 > 80) {
+		return 80;
+	} else {
+		return mapDistance / 1000;
+	}
+};
+//refresh on map move
+map.on('moveend', function(e) {
+	var checkBox = document.getElementById("poi");
+	if (checkBox.checked == true) {
+		lpoi();
+	}
+});
+
+var markers = L.featureGroup().addTo(map);
+
+//remove poi locations and reset layers
+var removepoi = function() {
+   if (gbAjax && gbAjax.done && gbAjax.fail && gbAjax.always){
+			gbAjax.abort();
+	   }
+	if (document.getElementById("poi").checked == false) {
+	if (method == 'wfs') {
+			jsngbr.clearLayers();
+			map.removeLayer(jsngbr);
+			} else {
+			 map.removeLayer(gbrwmsLayer);
+		}
+	} else {
+		document.getElementById("poi").checked = false;
+	}
+	gbchkd = 0;
+	document.getElementById("loadpoia").checked = false;
+	document.getElementById("loadpoib").checked = false;
+	markers.clearLayers();
+	$("#rmvchk").empty(); 
+		$("#templeg").remove();
+		$("#templega").remove();
+		$(".legend").height(190);
+};
+
+ //  load WPPOI data 
+   var searchterm='';
+		var filter='';
+function poibrandname() {
+	 searchterm = 'brandname';
+			jsngbr.clearLayers();
+				map.removeLayer(jsngbr);
+	gbchkd = 0;
+				$("#rmvchk").empty(); 
+				$("#templeg").remove();
+				$("#templega").remove();
+				$(".legend").height(190);
+	document.getElementById("loadpoib").checked = false; 
+	document.getElementById("loadpoia").checked = true;
+	document.getElementById("loadpoic").checked = false; 
+	gbrlpoi();
+		};
+		  function poiname() {
+	searchterm = 'name';
+			  jsngbr.clearLayers();
+			map.removeLayer(jsngbr);
+			   gbchkd = 0;
+			  $("#rmvchk").empty(); 
+				$("#templeg").remove();
+				$("#templega").remove();
+				$(".legend").height(190);
+	document.getElementById("loadpoia").checked = false; 
+	document.getElementById("loadpoib").checked = true;
+	document.getElementById("loadpoic").checked = false; 
+	gbrlpoi();
+		
+}	 
+		function poisql() {
+			
+				filter = document.getElementById("freesql").value.trim();
+			
+			if (filter.length==0) {
+				alert('Enter some SQL')
+				document.getElementById("loadpoic").checked = false; 
+			} else {
+			 searchterm = 'freesql';
+			  jsngbr.clearLayers();
+			map.removeLayer(jsngbr);
+			   gbchkd = 0;
+			  $("#rmvchk").empty(); 
+				$("#templeg").remove();
+				$("#templega").remove();
+				$(".legend").height(190);
+	document.getElementById("loadpoia").checked = false; 
+	document.getElementById("loadpoib").checked = false;
+	document.getElementById("loadpoic").checked = true;
+	gbrlpoi();
+			}
+		}
+		
+// load UK postgres POI data
+		var gbchkd, gbAjax,gbr_usa,cntyPoi;
+
+		function gbrControl() {
+		$("#asdfk").remove();
+		$("#rdpoi").remove();
+		$("#templeg").remove();
+		$("#templega").remove();
+		$(".legend").height(190);
+		$("#rmvchk").empty();  
+			
+			if (gbchkd == 1) {
+				gbchkd = 0;
+				jsngbr.clearLayers();
+				map.removeLayer(jsngbr);
+				map.removeLayer(gbrwmsLayer);
+				
+				if (gbAjax && gbAjax.done && gbAjax.fail && gbAjax.always){
+					gbAjax.abort();
+			   }
+			} else {
+				gbchkd = 1;
+				gbrlpoi();
+				$("#rmvchk").append('<div id="asdfk">Compare<input id="compare" type="checkbox" onclick="wtf()"></div><div><input type="range" min="10" max="1000" value="50" class="slider" id="bufferRange" ><input id="slidnum" style="width:30px; height:20px;" type="textbox">m</input></div><script> let i = document.getElementById("bufferRange"), o = document.getElementById("slidnum"); o.value = i.value; i.addEventListener("input", function () { o.value = i.value;}, false);<\/script>');
+				$("#rmvchk").append("<div id='rdpoi'>Remove POI <input id='rpoi' type='checkbox' onclick='removepoi()'></div>");
+	
+			}
+		  
+		};
+		
+		var slider = document.getElementById("bufferRange");
+		
+		$.ajaxSetup({
+	beforeSend: function () {
+		$("#log").empty();
+		 $('#log').css( "height", "+=10px" );$('#log').fadeIn();
+		$('#log').append('Searching pagescraping where brand like \''+ searchName + '\' and country = \'' + searchCnt.toUpperCase() + '\'</br>');
+	},
+	 complete: function() {
+		 setTimeout(function(){$("#log").empty();$('#log').fadeOut();$('#log').css( "height", "-=10px" );}, 3000);
+	 }
+});
+ 
+		
+//Call data
+		function gbrlpoi() {
+			
+			 $("#asdfk").remove();
+		$("#rdpoi").remove();
+		$("#templeg").remove();
+		$("#templega").remove();
+		$(".legend").height(190);
+		$("#rmvchk").empty();  
+			  $("#rmvchk").append('<div id="asdfk">Compare<input id="compare" type="checkbox" onclick="wtf()"></div><div><input type="range" min="10" max="1000" value="50" class="slider" id="bufferRange"><input id="slidnum" style="width:30px; height:20px;" type="textbox">m</input></div><script> let i = document.getElementById("bufferRange"), o = document.getElementById("slidnum"); o.value = i.value; i.addEventListener("input", function () { o.value = i.value;}, false);<\/script>');
+				$("#rmvchk").append("<div id='rdpoi'>Remove POI <input id='rpoi' type='checkbox' onclick='removepoi()'></div>");
+	
+			document.getElementById("poi").checked = false;
+			markers.clearLayers();
+			
+			 if (searchterm=='freesql') {
+			 filter = document.getElementById("freesql").value.trim();
+			 } else if (searchterm=='name'){
+				 filter = searchterm + " like '%" + searchName.toUpperCase() + "%' ";
+			 } else {
+				filter = searchterm + " like '" + searchName.toUpperCase() + "' ";
+			 }
+			
+			if (method == 'wfs') {
+
+				var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+
+				var defaultParameters = {
+					service: 'WFS',
+					version: '1.0.0',
+					request: 'GetFeature',
+					typeName: 'cite:wppoi_'+gbr_usa,
+					outputFormat: 'text/javascript',
+					format_options: 'callback: gbrhandleJson',
+					CQL_FILTER: filter
+				};
+
+				var parameters = L.Util.extend(defaultParameters);
+
+				gbAjax = $.ajax({
+					url: rootUrl + L.Util.getParamString(parameters),
+					dataType: 'jsonp',
+					jsonpCallback: 'gbrhandleJson',
+					beforeSend: function() {
+					$('.loader').css({'display': 'block'});
+					$('#log').fadeIn();$('#log').css( "height", "+=20px" );
+					$('#log').append('Searching wppoi_'+gbr_usa+' where '+filter+'</br>');
+					},
+					complete: function() {
+					$('.loader').css({'display': 'none'});
+					setTimeout(function(){$("#log").empty();$('#log').fadeOut();$('#log').css( "height", "-=20px" );}, 3000);
+					},
+					success: gbrhandleJson,
+					error: function(jqXHR, textStatus, errorThrown) {
+						if (textStatus!=='abort'){
+						alert('Error - Cannot display');
+						}
+						console.log('Error - Cannot display', jqXHR, textStatus, errorThrown);
+					}
+				});
+
+			} else {
+
+				cutwmsgbr = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+					layers: 'cite:wppoi_'+gbr_usa,
+					format: 'image/png',
+					transparent: true,
+					styles: 'poi_wms',
+					CQL_FILTER: filter,
+					no_cache_plz: Date.now()
+				})
+
+				gbrwmsLayer = L.layerGroup([cutwmsgbr]);
+				map.addLayer(gbrwmsLayer);
+			}
+		};
+ //Count WFS	   
+	function countUnique(iterable) {
+		return new Set(iterable).size;
+	}
+//Comparing distances between two datasets	 
+		var txt;
+	var ary = [];
+		var wtf = function() {
+			
+			var radi = document.getElementById("slidnum").value
+			
+			ary = [];
+		   $('.loader').css({'display': 'block'});
+		var checkBox = document.getElementById("compare");
+			if (checkBox.checked == true) {
+				  
+		  Object.keys(jsn._layers).forEach(function(k){
+			  getDist(jsn._layers[k]._latlng);
+		  });
+		
+			function getDist(ft1) {
+				
+		Object.keys(jsngbr._layers).forEach(function(k){
+			  
+			var ft2 = (jsngbr._layers[k]._latlng);
+				
+				var R = 6371; // km
+				var dLat = toRad(ft1.lat-ft2.lat);
+				var dLon = toRad(ft1.lng-ft2.lng); 
+				var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+						Math.cos(toRad(ft1.lat)) * Math.cos(toRad(ft2.lat)) * 
+						Math.sin(dLon/2) * Math.sin(dLon/2); 
+				var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+				var d = R * c;
+			
+				if (d <= (radi/1000)) {	
+					ary.push("'"+jsngbr._layers[k].feature.properties.pb_id+"'");
+					
+					jsngbr._layers[k].setStyle({fillColor: 'yellow'});
+				} 
+			
+			  });
+			} 
+				$(".legend").height(240);
+				$("#chng_plx").append("<div id='templeg'><i style='background:gold'></i> wppoi < 50m <button id='p2Container' style='float:right'>"+countUnique(ary)+"</button><br><br></div>");
+				$("#chng_plxa").append("<div id='templega'><i style='background:white'></i> wppoi > 50m <button id='p2Containera' style='float:right'>"+(poiCount-countUnique(ary))+"</button><br><br></div>");
+				
+			} else {
+				jsngbr.setStyle({fillColor: 'green'});
+				$(".legend").height(190);
+				$("#templeg").remove();
+				$("#templega").remove();
+			}
+			 $('.loader').css({'display': 'none'});
+			
+		 $("#rmvchk").append("<div id='ttest'><font color='blue'>Download report</font></div>");
+			
+
+//create a pdf report showing current map 
+	document.getElementById("ttest").addEventListener("click", function() {
+		 var doc = new jsPDF()
+		 
+		 html2canvas(document.querySelector('#map'), {
+				useCORS: true,
+				foreignObjectRendering: true
+			}).then( (canvas)=> {
+	let pageData = canvas.toDataURL('image/jpeg', 1.0);
+			 
+	doc.setFillColor(239,239,239);
+	doc.rect(0, 0, 220, 300, "F");
+			 
+	  doc.setFontSize(22);	   
+	// doc.setTextColor(0, 51, 204);
+	doc.text('Brand Health Report: ' + searchName.charAt(0).toUpperCase() + searchName.slice(1) + ' - ' + searchCnt, 10, 20);
+	 doc.setFontSize(16);	 
+   
+	   var why_doesnt_js_has_an_average_function = 3;
+			 if (cnt1==0) {
+				 why_doesnt_js_has_an_average_function--
+			 }
+			 if (cnt2==0) {
+				 why_doesnt_js_has_an_average_function--
+			 }
+			 if (cnt3==0) {
+				 why_doesnt_js_has_an_average_function--
+			 }
+			 
+		var scrap_cnt = (cnt1+cnt2+cnt3)/why_doesnt_js_has_an_average_function;		 
+			 
+	var prcs = Math.round((countUnique(ary)/poiCount)*100);
+	 if (prcs>80) {
+		   doc.setTextColor(0, 204, 0);		
+		} else if (prcs<=80&&prcs>50){
+			doc.setTextColor(255, 204, 0); 
+		} else {
+			doc.setTextColor(204, 0, 0);  
+		}
+			 
+	  doc.text('Precision: '+ prcs +'%', 150, 50);  
+			 
+	 var accr = Math.round((poiCount/scrap_cnt)*100);
+	 if (accr>80) {
+		   doc.setTextColor(0, 204, 0);		
+		} else if (accr<=80&&accr>50){
+			doc.setTextColor(255, 204, 0); 
+		} else {
+			doc.setTextColor(204, 0, 0);  
+		}
+			 
+	  doc.text('Accuracy: '+ accr +'%', 150, 40);  
+
+	doc.setFontSize(12);
+	 doc.setTextColor(0, 51, 204);
+	doc.text('Total scraped records: ', 10, 40);   
+	 doc.text(scrap_cnt.toString(), 65, 40);   
+	 doc.setTextColor(0, 204, 0);	 
+	doc.text('Total POI records: ',10, 45); 
+	doc.text(poiCount.toString(), 65, 45); 
+	  doc.setTextColor(232, 186, 4);   
+	 doc.text('Matching records: ', 10, 50);  
+	 doc.text(countUnique(ary).toString(), 65, 50);   
+	  doc.setTextColor(25, 181, 1);   
+	 doc.text('Non matching records: ', 10, 55); 
+	 doc.text((poiCount-countUnique(ary)).toString(), 65, 55);	
+			 
+	var row=[];
+	for (x in jsngbr._layers) {
+		if (!ary.includes("'"+jsngbr._layers[x].feature.properties.pb_id+"'")) {
+	  row.push([jsngbr._layers[x].feature.properties.pb_id,jsngbr._layers[x].feature.properties.name,jsngbr._layers[x].feature.properties.formattedaddress])
+		}
+	}
+				  
+	doc.addImage(pageData,10,70,190,120);
+			
+	if (row.length<=50) {
+			  doc.autoTable({
+				  head: [['PB_ID','Name','FormattedAddress']],
+				  body: row,
+				  margin: {top:200},
+				  pagebreak:'auto'
+			  });
+		  }
+	   
+		doc.save('Brand report.pdf');
+	});
+});		
+	   }		 
+
+function toRad(Value) {
+	/** Converts numeric degrees to radians */
+	return Value * Math.PI / 180;
+}
+// load POI via  Geoenrich  
+		var lpoi = function() {
+
+			var checkBox = document.getElementById("poi");
+			if (checkBox.checked == true) {
+
+				$("#rmvchk").empty(); $("#rmvchk").append(versionno);
+				$("#rmvchk").append("<div id='rdpoi'>Remove POI <input id='rpoi' type='checkbox' onclick='removepoi()'></div>");
+				//$("#rmvchk").append("<div id='gbrallpoi'>Load all POIs (GBR only) <input id='gbrpoi' type='checkbox' onclick='gbrControl()'></div>");
+
+				var settings = {
+					"async": true,
+					"crossDomain": true,
+					"url": "https://api.pitneybowes.com/location-intelligence/geoenrich/v1/poi/bylocation?latitude=" + map.getCenter().lat + "&longitude=" + map.getCenter().lng + "&name=" + encodeURIComponent(searchName) + "&searchRadius=" + getMapRadiusKM() + "&searchRadiusUnit=Kilometers&searchDataset=PBData&searchPriority=N",
+					"method": "GET",
+					"headers": {
+						"Authorization": authID
+					}
+				}
+
+				customCircleMarker = L.CircleMarker.extend({
+					options: {
+						brandName: 'Brand',
+						address: 'Address',
+						postcode: 'Postcode',
+						country: 'Country'
+					}
+				});
+
+				$.ajax(settings).done(function(response) {
+					
+					console.log(response);
+					
+					if (response.poi.length == 0) {
+						alert('No results found in this location for brand like ' + searchName)
+					}
+
+					for (var i = 0; i < response.poi.length; i++) {
+						var lat = response.poi[i].geometry.coordinates[1];
+						var lng = response.poi[i].geometry.coordinates[0];
+
+						var marker = new customCircleMarker([lat, lng], {
+							title: response.poi[i].name,
+							radius: 10,
+							brandName: response.poi[i].brandName,
+							address: response.poi[i].contactDetails.address.formattedAddress,
+							postcode: response.poi[i].contactDetails.address.postCode,
+							country: response.poi[i].contactDetails.address.country,
+							color: 'green'
+
+						});
+						marker.on('click', function(e) {
+
+							$("#infobox").empty();
+							$("#infobox").append("<hr/><span id='toggle-ctrl-panel' class='glyphicon glyphicon-menu-up' onclick='$(\"#infobox\").empty();'></span>");
+							$("#infobox").append("<p><b>WPPOI record</b></p>");
+							for (var key in e.target.options) {
+								if (e.target.options.hasOwnProperty(key) && !(key == 'radius' || key == 'color')) {
+									$("#infobox").append("<p>" + key + ": " + e.target.options[key] + "</p>");
+								}
+							}
+						});
+
+						marker.addTo(markers);
+					}
+
+				});
+
+			} else {
+				// markers.clearLayers();
+				$("#asdfk").remove();
+				$("#templeg").remove();	 
+				$("#templega").remove();
+				$(".legend").height(190);
+			}
+		}
+
+//load brand/country on change 
+		var ukcsear = document.getElementById("ukcsearch");
+
+		ukcsear.addEventListener("keyup", function(event) {
+
+			event.preventDefault();
+			
+			if (event.keyCode === 13) {
+				reload()
+			}
+		});
+
+		var countryS = document.getElementById("ccode");
+
+		countryS.addEventListener("keyup", function(event) {
+			
+			event.preventDefault();
+			
+			if (event.keyCode === 13) {
+				reload()
+			}
+		});
+		
+		
+		function reload() {
+				searchName = document.getElementById("ukcsearch").value;
+				searchCnt = document.getElementById("ccode").value;
+				lyrName = 'cite:pagescraping';
+
+				searchName = searchName.toLowerCase();
+				
+			if (brandlist.length>1){
+				if (!brandlist.includes(searchName)) {
+					alert('Brand not found')
+				}
+			}
+			if (countlist.length>1){
+				if (!countlist.includes(searchCnt.toUpperCase())) {
+					alert('Country not found')
+				}
+			}
+			
+				location.href = location.origin + location.pathname + '?brand=' + encodeURIComponent(searchName) + '&country=' + searchCnt.toUpperCase();
+		}
+
+		var cutwms, cutwmsfme, wmsLayer;
+
+// Get geoserver layer
+		function getWFS() {
+
+			if (method == 'wfs') {
+
+				var rootUrl = 'http://152.144.220.198:8080/geoserver/ows';
+				var thifFilter;
+				
+				if (searchCnt) {
+					thisFilter="brand like '" + searchName + "' and country = '" + searchCnt.toUpperCase() + "'"
+				} else {
+					thisFilter="brand like '" + searchName + "'"
+				}
+				var defaultParameters = {
+						service: 'WFS',
+						version: '1.0.0',
+						request: 'GetFeature',
+						typeName: 'cite:pagescraping',
+						outputFormat: 'text/javascript',
+						format_options: 'callback: getJsonA',
+						CQL_FILTER: thisFilter
+					};
+
+				var parameters = L.Util.extend(defaultParameters);
+
+				$.ajax({
+					url: rootUrl + L.Util.getParamString(parameters),
+					dataType: 'jsonp',
+					jsonpCallback: 'getJsonA',
+					beforeSend: function() {
+					$('.loader').css({'display': 'block'});
+					$('#log').css( "height", "+=20px" );$('#log').fadeIn();
+					$('#log').append('Searching pagescraping where '+thisFilter+'</br>');
+					},
+					complete: function() {
+					$('.loader').css({'display': 'none'});
+					setTimeout(function(){$("#log").empty();$('#log').fadeOut();$('#log').css( "height", "-=20px" );}, 3000);
+					},
+					success: handleJson,
+					error: function(jqXHR, textStatus, errorThrown) {
+						alert('Error - Cannot display');
+						console.log('Error - Cannot display', jqXHR, textStatus, errorThrown);
+					}
+				});
+
+			} else {
+				if (searchCnt) {
+		//load different sources seperately to colour
+					cutwms = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+						layers: 'cite:pagescraping',
+						format: 'image/png',
+						transparent: true,
+						CQL_FILTER: "brand like '" + searchName + "' and country = '" + searchCnt.toUpperCase() + "' and source = 'alltheplaces'",
+						no_cache_plz: Date.now()
+					})
+
+					cutwmsfme = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+						layers: 'cite:pagescraping',
+						format: 'image/png',
+						transparent: true,
+						styles: 'fme_wms',
+						CQL_FILTER: "brand like '" + searchName + "' and country = '" + searchCnt.toUpperCase() + "' and (source = 'fme' or source = 'python' ) ",
+						no_cache_plz: Date.now()
+					})
+					
+					cutwmsyext = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+						layers: 'cite:pagescraping',
+						format: 'image/png',
+						transparent: true,
+						styles: 'yext_wms',
+						CQL_FILTER: "brand like '" + searchName + "' and country = '" + searchCnt.toUpperCase() + "' and source = 'yext'",
+						no_cache_plz: Date.now()
+					})
+
+				} else {
+
+					cutwms = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+						layers: 'cite:pagescraping',
+						format: 'image/png',
+						transparent: true,
+						CQL_FILTER: "brand like '" + searchName + "' and source = 'alltheplaces'",
+						no_cache_plz: Date.now()
+					})
+
+					cutwmsfme = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+						layers: 'cite:pagescraping',
+						format: 'image/png',
+						transparent: true,
+						styles: 'fme_wms',
+						CQL_FILTER: "brand like '" + searchName + "' and (source = 'fme' or source = 'python' ) ",
+						no_cache_plz: Date.now()
+					})
+					
+					cutwmsyext = L.tileLayer.wms("http://152.144.220.198:8080/geoserver/wms", {
+						layers: 'cite:pagescraping',
+						format: 'image/png',
+						transparent: true,
+						styles: 'yext_wms',
+						CQL_FILTER: "brand like '" + searchName + "' and source = 'yext'",
+						no_cache_plz: Date.now()
+					})
+				}
+				wmsLayer = L.layerGroup([cutwms, cutwmsfme, cutwmsyext]);
+				map.addLayer(wmsLayer);
+			}
+		};
+
+//Handle geoserver results  
+		var jsngbr = L.geoJson(null, {
+			onEachFeature: gbronEachFeature,
+			pointToLayer: function(feature, latlng) {
+				return new L.CircleMarker(latlng, {
+					radius: 5
+				});
+			},
+			style: {
+				weight: 2,
+				color: '#666',
+				fillColor: 'green',
+				dashArray: '',
+				fillOpacity: 0.5
+			}
+		});
+		var poiCount;
+		function gbrhandleJson(data) {
+			poiCount = data.totalFeatures;
+			if (data.totalFeatures > 0) {
+				jsngbr.addData(data);
+				map.addLayer(jsngbr);
+	
+					$("#p1Container").empty();
+					$("#p1Container").append(data.totalFeatures);   
+			}
+		};
+	//on poi click
+		function gbronEachFeature(feature, layer) {
+			var name = feature.properties.formattedaddress;
+			layer.bindTooltip(name, {
+				permanent: false,
+				opacity: 0.9
+			});
+			layer.on({
+				click: gbrwhenClicked
+			});
+		}
+
+		var red = ({
+			weight: 2,
+			color: '#666',
+			fillColor: 'red',
+			dashArray: '',
+			fillOpacity: 0.5
+		});
+		var blue = ({
+			weight: 2,
+			color: '#666',
+			fillColor: 'blue',
+			dashArray: '',
+			fillOpacity: 0.5
+		});
+		var purple = ({
+			weight: 2,
+			color: '#666',
+			fillColor: '#ad42f4',
+			dashArray: '',
+			fillOpacity: 0.5
+		});
+
+		var jsn = L.geoJson(null, {
+			onEachFeature: onEachFeature,
+			pointToLayer: function(feature, latlng) {
+				return new L.CircleMarker(latlng, {
+					radius: 5
+				});
+			},
+			style: function(feature) {
+				if (feature.properties.source == 'fme' ||feature.properties.source == 'python' ) { 
+					cnt2=cnt2+1;
+					$("#sc2Container").empty();
+					$("#sc2Container").append(cnt2);   
+					return blue
+				} else if (feature.properties.source == 'yext') {
+					cnt3=cnt3+1;
+					 $("#sc3Container").empty();
+					$("#sc3Container").append(cnt3);   
+					return purple
+				} else {
+					 cnt1=cnt1+1;
+					$("#sc1Container").empty();
+					$("#sc1Container").append(cnt1);					
+					return red
+				}
+			}
+		});
+		
+		var cnt1=0,cnt2=0,cnt3=0;
+	//something idk
+		function handleJson(data) {
+			if (data.totalFeatures > 0) {
+				cnt1=0,cnt2=0,cnt3=0;
+				jsn.addData(data);
+				map.addLayer(jsn);
+			}
+		};
+
+		function onEachFeature(feature, layer) {
+			var name = feature.properties.address + ' ' + feature.properties.postcode;
+			layer.bindTooltip(name, {
+				permanent: false,
+				opacity: 0.9
+			});
+			layer.on({
+				click: whenClicked
+			});
+		}
+
+		function whenClicked(e) {
+			$("#infobox").empty();
+			$("#infobox").height(($(window).height())-195+'px');
+			$("#infobox").append("<hr/><span id='toggle-ctrl-panel' class='glyphicon glyphicon-menu-up' onclick='$(\"#infobox\").empty();$(\"#infobox\").height(0);'></span>");
+			$("#infobox").append("<p><b>Pagescrape record</b></p>");
+			for (var key in e.target.feature.properties) {
+				if (e.target.feature.properties.hasOwnProperty(key)) {
+					$("#infobox").append("<p>" + key + ": " + e.target.feature.properties[key] + "</p>");
+				}
+			}
+		};
+
+		function gbrwhenClicked(e) {
+			$("#infobox").empty();
+			$("#infobox").height(($(window).height())-195+'px');
+			$("#infobox").append("<hr/><span id='toggle-ctrl-panel' class='glyphicon glyphicon-menu-up' onclick='$(\"#infobox\").empty();$(\"#infobox\").height(0);'></span>");
+			$("#infobox").append("<p><b>WPPOI record</b></p>");
+			for (var key in e.target.feature.properties) {
+				if (e.target.feature.properties.hasOwnProperty(key)) {
+					$("#infobox").append("<p>" + key + ": " + e.target.feature.properties[key] + "</p>");
+				}
+			}
+		};
+		
+//Menu behaviour
+		$(document).ready(function() {
+			//  Show/hide control panel
+			$('#toggle-ctrl-panel').click(function() {
+				var noteContainer = $('.ctrl-panel')[0];
+				var width = $('.ctrl-panel').width();
+
+				if (noteContainer.style.left == '' || noteContainer.style.left == '0px') {
+					noteContainer.style.left = '-' + (width - 30) + "px";
+					$('#toggle-ctrl-panel').removeClass('glyphicon-menu-left').addClass('glyphicon-menu-right');
+				} else {
+					noteContainer.style.left = '0px';
+					$('#toggle-ctrl-panel').removeClass('glyphicon-menu-right').addClass('glyphicon-menu-left');
+				}
+			});
+			$('#toggle-ctrl-panel1').click(function() {
+				var noteContainer = $('.ctrl-panel1')[0];
+				var width = $('.ctrl-panel1').width();
+
+				if (noteContainer.style.right == '' || noteContainer.style.right == '0px') {
+					noteContainer.style.right = '-' + (width - 30) + "px";
+					$('#toggle-ctrl-panel1').removeClass('glyphicon-menu-right').addClass('glyphicon-menu-left');
+				} else {
+					noteContainer.style.right = '0px';
+					$('#toggle-ctrl-panel1').removeClass('glyphicon-menu-left').addClass('glyphicon-menu-right');
+				}
+			});
+
+			var acc = document.getElementsByClassName("accordion");
+			var i;
+
+			for (i = 0; i < acc.length; i++) {
+				acc[i].addEventListener("click", function() {
+					this.classList.toggle("active");
+					var panel = this.nextElementSibling;
+					if (panel.style.display === "block") {
+						panel.style.display = "none";
+					} else {
+						panel.style.display = "block";
+					}
+				});
+			}
+		});
+	</script>
+</body>
+</html>
